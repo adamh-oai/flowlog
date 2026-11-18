@@ -351,12 +351,40 @@ pub(crate) fn internal_column_tokens(dt: &DataType, string_intern: bool) -> Toke
 /// column keeps its trailing comma, since `(T)` is a parenthesized `T`, not
 /// a 1-tuple.
 pub(crate) fn tuple_tokens<I: IntoIterator<Item = TokenStream>>(cols: I) -> TokenStream {
-    let tys: Vec<TokenStream> = cols.into_iter().collect();
-    match tys.as_slice() {
-        [] => quote! { () },
-        [t0] => quote! { ( #t0, ) },
-        _ => quote! { ( #(#tys),* ) },
+    fn render(fields: &[TokenStream]) -> TokenStream {
+        match fields {
+            [] => quote! { () },
+            [field] => quote! { ( #field, ) },
+            fields if fields.len() > RUST_TUPLE_ARITY => {
+                let (head, tail) = fields.split_at(WIDE_TAIL_INDEX);
+                let tail = render(tail);
+                quote! { ( #(#head,)* #tail ) }
+            }
+            fields => quote! { ( #(#fields),* ) },
+        }
     }
+    render(&cols.into_iter().collect::<Vec<_>>())
+}
+
+// The tuple traits needed by Differential Dataflow stop at 12 Rust fields.
+const RUST_TUPLE_ARITY: usize = 12;
+const WIDE_TAIL_INDEX: usize = RUST_TUPLE_ARITY - 1;
+
+/// The physical field holding a logical column, using the same layout as tuple_tokens.
+pub(crate) fn tuple_slot(mut row: TokenStream, mut index: usize, mut arity: usize) -> TokenStream {
+    debug_assert!(index < arity);
+    while arity > RUST_TUPLE_ARITY && index >= WIDE_TAIL_INDEX {
+        let tail = syn::Index::from(WIDE_TAIL_INDEX);
+        row = quote! { #row.#tail };
+        arity -= WIDE_TAIL_INDEX;
+        index -= WIDE_TAIL_INDEX;
+    }
+    let index = syn::Index::from(index);
+    quote! { #row.#index }
+}
+
+pub(crate) fn kv_tuple_slot(row: TokenStream, types: &KvTypes, is_key: bool, index: usize) -> TokenStream {
+    tuple_slot(row, index, if is_key { types.0.len() } else { types.1.len() })
 }
 
 #[cfg(test)]

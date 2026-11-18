@@ -22,6 +22,7 @@ use crate::tuple_tokens;
 use crate::ty::data::KvTypes;
 use crate::ty::data::column_is_copy;
 use crate::ty::data::slot_type;
+use crate::ty::data::kv_tuple_slot;
 
 /// Returns `true` for the operators [`arithmetic_step`] emits as a call
 /// rather than an infix expression.
@@ -350,14 +351,13 @@ impl Codegen {
         self.arithmetic_to_token(expr, string_intern, &|arg| match arg {
             TransformationArgument::KV((is_key, idx))
             | TransformationArgument::Jn((_, is_key, idx)) => {
-                let i = Index::from(*idx);
                 let side = if *is_key {
                     quote! { k }
                 } else {
                     quote! { v }
                 };
                 read_slot(
-                    quote! { #side.#i },
+                    kv_tuple_slot(side, input_type, *is_key, *idx),
                     input_type,
                     *is_key,
                     *idx,
@@ -379,7 +379,6 @@ impl Codegen {
     ) -> Result<TokenStream, CodegenError> {
         self.arithmetic_to_token(expr, string_intern, &|arg| match arg {
             TransformationArgument::Jn((is_left, is_key, idx)) => {
-                let i = Index::from(*idx);
                 let (side, types) = match (is_left, is_key) {
                     (_, true) => (quote! { k }, left_type),
                     (true, false) => (quote! { lv }, left_type),
@@ -387,7 +386,7 @@ impl Codegen {
                 };
                 // Join parameters are references; an expression yields an
                 // owned value, copied or cloned out.
-                read_slot(quote! { #side.#i }, types, *is_key, *idx, string_intern)
+                read_slot(kv_tuple_slot(side, types, *is_key, *idx), types, *is_key, *idx, string_intern)
             }
             TransformationArgument::KV(_) => Err(CodegenError::internal(format!(
                 "key-value argument {arg:?} in a join expression"

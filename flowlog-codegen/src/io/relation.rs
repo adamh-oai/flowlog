@@ -10,7 +10,7 @@ use flowlog_parser::Program;
 use flowlog_parser::Relation;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::Index;
+use crate::ty::data::tuple_slot;
 
 use crate::CodegenError;
 use crate::const_to_token;
@@ -69,7 +69,7 @@ pub(super) fn gen_relation_declaration(
     };
     let ordering = relation.output_sink().and_then(|sink| {
         sink.order_by().map(|keys| {
-            let compare = gen_compare(keys, string_intern);
+            let compare = gen_compare(keys, string_intern, arity);
             let limit = match sink.limit() {
                 Some(limit) => quote! { Some(#limit) },
                 None => quote! { None },
@@ -101,11 +101,10 @@ pub(super) fn gen_relation_declaration(
 /// Returns the `compare` function that orders tuples by each key of `spec`
 /// in turn, ascending or descending; an interned string compares by its
 /// text.
-fn gen_compare(spec: &[OrderKey], string_intern: bool) -> TokenStream {
+fn gen_compare(spec: &[OrderKey], string_intern: bool, arity: usize) -> TokenStream {
     let comparisons = spec.iter().map(|(col_idx, data_type, ascending)| {
-        let index = Index::from(*col_idx);
-        let a = quote! { a.#index };
-        let b = quote! { b.#index };
+        let a = tuple_slot(quote! { a }, *col_idx, arity);
+        let b = tuple_slot(quote! { b }, *col_idx, arity);
         let (a_expr, b_expr) = if string_intern {
             (
                 resolve_string_leaves(&a, data_type),
@@ -140,10 +139,10 @@ fn resolve_string_leaves(access: &TokenStream, data_type: &DataType) -> TokenStr
         DataType::String => quote! { ::flowlog_runtime::intern::resolve(#access) },
         DataType::FixedTuple(fields) => {
             let elems = fields.iter().enumerate().map(|(j, fdt)| {
-                let jdx = Index::from(j);
-                resolve_string_leaves(&quote! { (#access).#jdx }, fdt)
+                let field = tuple_slot(quote! { (#access) }, j, fields.len());
+                resolve_string_leaves(&field, fdt)
             });
-            quote! { ( #(#elems,)* ) }
+            tuple_tokens(elems)
         }
         DataType::IntLit
         | DataType::FloatLit

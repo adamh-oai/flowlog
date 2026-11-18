@@ -6,7 +6,7 @@ use flowlog_planner::planner::TransformationArgument;
 use proc_macro2::Ident;
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::Index;
+use crate::ty::data::{KvTypes, kv_tuple_slot};
 
 use crate::CodegenError;
 use crate::expr::term::constant::bool_value;
@@ -40,15 +40,12 @@ pub(crate) fn row_constraint_predicate(
 pub(crate) fn kv_constraint_predicate(
     constraints: &Constraints,
     string_intern: bool,
+    input_type: &KvTypes,
 ) -> Result<Option<TokenStream>, CodegenError> {
     constraint_predicate(constraints, string_intern, |arg| match arg {
         TransformationArgument::KV((is_key, idx)) => {
-            let i = Index::from(*idx);
-            Ok(if *is_key {
-                quote! { k.#i }
-            } else {
-                quote! { v.#i }
-            })
+            let row = if *is_key { quote! { k } } else { quote! { v } };
+            Ok(kv_tuple_slot(row, input_type, *is_key, *idx))
         }
         TransformationArgument::Jn(_) => Err(CodegenError::internal(format!(
             "join argument {arg:?} in a key-value constraint"
@@ -108,11 +105,15 @@ mod tests {
 
     use super::*;
 
+    fn types() -> KvTypes {
+        (vec![DataType::Int32; 4], vec![DataType::Int32; 4])
+    }
+
     #[test]
     fn no_constraint_is_no_predicate() {
         let constraints = Constraints::new(Vec::new(), Vec::new());
         assert!(
-            kv_constraint_predicate(&constraints, false)
+            kv_constraint_predicate(&constraints, false, &types())
                 .expect("nothing to lower")
                 .is_none()
         );
@@ -131,7 +132,7 @@ mod tests {
             vec![(KV((false, 1)), Constant::new(DataType::Int32, "7"))],
             vec![(KV((true, 0)), KV((false, 0)))],
         );
-        let pred = kv_constraint_predicate(&constraints, false)
+        let pred = kv_constraint_predicate(&constraints, false, &types())
             .expect("kv arguments")
             .expect("two equalities");
         assert_eq!(
@@ -154,7 +155,7 @@ mod tests {
             vec![(KV((false, 1)), Constant::new(DataType::Bool, text))],
             Vec::new(),
         );
-        let pred = kv_constraint_predicate(&constraints, false)
+        let pred = kv_constraint_predicate(&constraints, false, &types())
             .expect("kv arguments")
             .expect("one equality");
         assert_eq!(pred.to_string(), expected.to_string());

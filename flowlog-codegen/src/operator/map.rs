@@ -311,7 +311,7 @@ impl Codegen {
         si: bool,
         input_type: &KvTypes,
     ) -> Result<Option<TokenStream>, CodegenError> {
-        let constraint = kv_constraint_predicate(flow.constraints(), si)?;
+        let constraint = kv_constraint_predicate(flow.constraints(), si, input_type)?;
         let compare = self.kv_compare_predicate(flow.compares(), si, input_type)?;
         Ok(combine_predicates(constraint, compare))
     }

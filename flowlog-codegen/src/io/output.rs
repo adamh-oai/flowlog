@@ -17,7 +17,7 @@ use crate::local_emitter_ident;
 use crate::output_emitter_ident;
 use crate::relation_marker_ident;
 use crate::tuple_tokens;
-use crate::ty::data::column_is_copy;
+use crate::ty::data::{column_is_copy, tuple_slot};
 
 /// The outputs' fragments, one entry per output in each, grouped by where
 /// the [`Skeleton`](crate::Skeleton) places them.
@@ -160,12 +160,12 @@ impl Codegen {
                 let (_, types) = self.find_global_type(fingerprint)?;
                 let mut fields = vec![TokenStream::new(); order.len()];
                 for (position, &column) in order.iter().enumerate() {
-                    let index = syn::Index::from(position);
+                    let field = tuple_slot(quote! { data }, position, order.len());
                     fields[column] =
                         if column_is_copy(&types[column], self.config.str_intern_enabled()) {
-                            quote! { data.#index }
+                            field
                         } else {
-                            quote! { data.#index.clone() }
+                            quote! { #field.clone() }
                         };
                 }
                 let logical = tuple_tokens(fields);

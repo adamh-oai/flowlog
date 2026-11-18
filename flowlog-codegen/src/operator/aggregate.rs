@@ -23,7 +23,7 @@ use proc_macro2::Ident;
 use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote;
-use syn::Index;
+use crate::ty::data::tuple_slot;
 
 use super::Operator;
 use super::arranged_input;
@@ -120,7 +120,7 @@ impl Codegen {
         let accumulated = column.map_or(ty, |idx| &matches_type.1[idx]);
         let total_clock = self.program.is_incremental() && !recursive;
         let answers = answers(*op, matches_mutability, accumulated, total_clock);
-        let target = target_tokens(column);
+        let target = target_tokens(column, matches_type.1.len());
         let answer_row: KvTypes = (matches_type.0.clone(), vec![ty.clone()]);
         let answer_ty = internal_column_tokens(ty, si);
         let (k, v) = kv_params(key, value, compares, None);
@@ -251,12 +251,12 @@ fn target_column(
 /// Returns the closure reading the value column `column` out of a match's
 /// value: nothing for `count`, which has no target.
 #[must_use]
-fn target_tokens(column: Option<usize>) -> TokenStream {
+fn target_tokens(column: Option<usize>, arity: usize) -> TokenStream {
     match column {
         None => quote! { |_| () },
         Some(idx) => {
-            let i = Index::from(idx);
-            quote! { |v| v.#i }
+            let value = tuple_slot(quote! { v }, idx, arity);
+            quote! { |v| #value }
         }
     }
 }
@@ -276,7 +276,7 @@ mod tests {
     #[case(None, "|_|()")]
     #[case(Some(2), "|v|v.2")]
     fn the_target_reads_its_value_column(#[case] column: Option<usize>, #[case] expected: &str) {
-        assert_eq!(normalized(target_tokens(column)), expected);
+        assert_eq!(normalized(target_tokens(column, 4)), expected);
     }
 
     // Cases: operator, accumulated type, total clock, answers.
